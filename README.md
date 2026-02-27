@@ -1,0 +1,32 @@
+# claude-skills
+
+Custom skills for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+
+## Skills
+
+### code-review
+
+Entropy-reducing code review. Runs 9 independent review layers as isolated subagents — architecture, data flow, testability, security, correctness, test coverage, performance, observability, and hygiene. Each layer gets a fresh context and reviews through only its assigned lens. Favors deletion, consolidation, and simplification over additive fixes.
+
+### review-synthesis
+
+Blind validation pipeline for multiple code review outputs. Takes N review files, strips reviewer identity, verifies every finding against actual code, filters hallucinations, and produces a single prioritized report with signal-to-noise stats. Three-stage pipeline: pre-processor → blind synthesizer → reporter.
+
+## Setup
+
+These skills are designed to be symlinked into `~/.claude/skills/`:
+
+```bash
+ln -s /path/to/claude-skills/code-review ~/.claude/skills/code-review
+ln -s /path/to/claude-skills/review-synthesis ~/.claude/skills/review-synthesis
+```
+
+## Dependencies
+
+- [superpowers](https://github.com/obra/superpowers) — foundational skill framework. Several skills here reference superpowers skills like `receiving-code-review` and `dispatching-parallel-agents`.
+
+## Adding a new skill
+
+1. Create a directory with a `SKILL.md` file
+2. Symlink it into `~/.claude/skills/`
+3. Claude picks it up automatically
