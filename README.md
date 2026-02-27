@@ -12,6 +12,27 @@ Entropy-reducing code review. Runs 9 independent review layers as isolated subag
 
 Blind validation pipeline for multiple code review outputs. Takes N review files, strips reviewer identity, verifies every finding against actual code, filters hallucinations, and produces a single prioritized report with signal-to-noise stats. Three-stage pipeline: pre-processor → blind synthesizer → reporter.
 
+## Usage: review-synthesis
+
+The synthesis skill expects review outputs as `.md` files in a shared directory. After any review agent finishes (code-review, PR review, etc.), save its output with this prompt:
+
+```
+write the full review output as markdown to /tmp/reviews/review-{N}.md using the Write tool.
+Create the /tmp/reviews/ directory first if it doesn't exist (use Bash: mkdir -p /tmp/reviews)
+```
+
+Replace `{N}` with 1, 2, 3... for each reviewer. Then synthesize:
+
+```
+synthesize the reviews in /tmp/reviews
+```
+
+To start fresh between runs:
+
+```
+rm -rf /tmp/reviews
+```
+
 ## Setup
 
 These skills are designed to be symlinked into `~/.claude/skills/`:
