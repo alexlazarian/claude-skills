@@ -27,14 +27,17 @@ File names don't matter — all `.md` files in the directory are ingested.
 
 ## Process
 
-Three sequential subagents via Task tool (`subagent_type: "general-purpose"`). Each gets a fresh context. The synthesizer never sees the original files.
+Three sequential subagents via Task tool (`subagent_type: "general-purpose"`), with orchestrator-level context resolution between stages 1 and 2. The synthesizer never sees the original files.
 
 ```dot
 digraph synthesis {
   rankdir=LR;
-  P [label="Pre-processor\n(normalize, anonymize, shuffle)" shape=box];
+  P [label="Pre-processor\n(normalize, anonymize,\nshuffle, extract context)" shape=box];
+  C [label="Context Resolution\n(orchestrator: resolve branch,\ncreate worktree)" shape=box style=dashed];
   S [label="Blind Synthesizer\n(verify each against code)" shape=box];
-  R [label="Reporter\n(format output)" shape=box];
+  R [label="Reporter\n(format output,\ncleanup worktree)" shape=box];
+  P -> C [label="context.json"];
+  C -> S [label="CODE_ROOT path"];
   P -> S [label="findings.json"];
   S -> R [label="classified.json"];
 }
@@ -44,11 +47,25 @@ digraph synthesis {
 
 Spawn with the **Pre-processor Prompt** below. Input: the reviews directory path.
 
-Writes to `{dir}/_synthesis/findings.json` and `{dir}/_synthesis/pre-stats.json`.
+Writes to `{dir}/_synthesis/findings.json`, `{dir}/_synthesis/pre-stats.json`, and `{dir}/_synthesis/context.json`.
+
+### Context Resolution (orchestrator — not a subagent)
+
+After Stage 1 completes, the orchestrator reads `{dir}/_synthesis/context.json` and ensures the synthesizer will verify code against the correct branch:
+
+1. **Read `context.json`** — it contains branch/PR info extracted from review headers.
+2. **If a branch was extracted:** fetch it and create a worktree:
+   ```sh
+   git fetch origin <branch>
+   git worktree add {REVIEWS_DIR}/_worktree origin/<branch> --detach
+   ```
+   Set `CODE_ROOT={REVIEWS_DIR}/_worktree`.
+3. **If no branch was extracted:** try to infer PR number from the directory name (e.g., `/tmp/reviews/131` → PR #131), then `gh pr view <number> --json headRefName` to get the branch. Create worktree as above.
+4. **If neither works:** ask the user for the PR number or branch name, or confirm they are already on the correct branch. If user confirms current branch, set `CODE_ROOT` to the repository root.
 
 ### Stage 2: Blind Synthesizer
 
-Spawn with the **Synthesizer Prompt** below. Input: only `findings.json` path. **Do NOT give it access to the original review files.**
+Spawn with the **Synthesizer Prompt** below. Input: `findings.json` path and `CODE_ROOT` path. **Do NOT give it access to the original review files.**
 
 Writes to `{dir}/_synthesis/classified.json`.
 
@@ -56,7 +73,7 @@ Writes to `{dir}/_synthesis/classified.json`.
 
 Spawn with the **Reporter Prompt** below. Input: `classified.json` and `pre-stats.json`.
 
-Displays final output to user. Cleans up `_synthesis/` directory.
+Displays final output to user. Cleans up `_synthesis/` directory and worktree.
 
 ---
 
@@ -85,9 +102,15 @@ For each file:
 
 5. Shuffle the final list randomly.
 
+6. Extract context metadata from review headers. Look for patterns like:
+   - `**Branch:** <branch> → <base>` or `**Branch:** <branch>`
+   - `**PR:** #<number>` or `PR #<number>` in titles/headers
+   - Any other PR/branch identifiers in the first 20 lines of each file
+   If multiple files agree on a branch, use it. If they conflict, include all candidates.
+
 ## Output
 
-Write two files:
+Write three files:
 
 {REVIEWS_DIR}/_synthesis/findings.json:
 ```json
@@ -112,6 +135,21 @@ Write two files:
 }
 ```
 
+{REVIEWS_DIR}/_synthesis/context.json:
+```json
+{
+  "branch": "feature/some-branch-name",
+  "base_branch": "main",
+  "pr_number": 131,
+  "confidence": "high"
+}
+```
+
+All fields in context.json are nullable. Set `confidence` to:
+- `"high"` — all sources agree on branch/PR
+- `"low"` — sources conflict or only one source had metadata
+- `null` — no branch/PR info found in any review
+
 The findings_per_source array uses index position only — no source names.
 
 Create the _synthesis directory if it doesn't exist.
@@ -129,13 +167,19 @@ You are a blind code review synthesizer. You receive an anonymous list of findin
 - No severity inflation. A finding is only as serious as the code proves it to be.
 - "No issue" is valid. If the claim is wrong, say so.
 
+## Code Root
+
+All file paths in findings are relative to the repository root. Read files from: {CODE_ROOT}
+
+When a finding references `path/to/file.ts`, read `{CODE_ROOT}/path/to/file.ts`. ALWAYS prefix file paths with {CODE_ROOT} when using the Read tool.
+
 ## Input
 
 Read: {REVIEWS_DIR}/_synthesis/findings.json
 
 ## For Each Finding
 
-1. LOCATE: Go to the file and line range cited.
+1. LOCATE: Go to the file and line range cited (under {CODE_ROOT}).
    - If the file doesn't exist → hallucination
    - If the function/variable cited doesn't exist at that location → hallucination
 
@@ -256,20 +300,35 @@ If no hallucinations found, write "None detected."
 After displaying output:
 1. Save the full report to {REVIEWS_DIR}/synthesis-report.md
 2. Delete the _synthesis directory: rm -rf {REVIEWS_DIR}/_synthesis
+3. If a worktree exists at {REVIEWS_DIR}/_worktree, remove it: git worktree remove {REVIEWS_DIR}/_worktree --force
 ```
 
 ## Invocation Example
 
 ```
-User: synthesize the reviews in /tmp/reviews
+User: synthesize the reviews in /tmp/reviews/131
 
 You:
-1. Spawn pre-processor subagent with REVIEWS_DIR=/tmp/reviews
+1. Spawn pre-processor subagent with REVIEWS_DIR=/tmp/reviews/131
 2. Wait for completion
-3. Spawn synthesizer subagent with REVIEWS_DIR=/tmp/reviews
-4. Wait for completion
-5. Spawn reporter subagent with REVIEWS_DIR=/tmp/reviews
-6. Reporter displays output and cleans up
+3. Read _synthesis/context.json → branch found: "fix/some-feature", PR #131
+4. git fetch origin fix/some-feature
+5. git worktree add /tmp/reviews/131/_worktree origin/fix/some-feature --detach
+6. Spawn synthesizer subagent with REVIEWS_DIR=/tmp/reviews/131, CODE_ROOT=/tmp/reviews/131/_worktree
+7. Wait for completion
+8. Spawn reporter subagent with REVIEWS_DIR=/tmp/reviews/131 (cleans up worktree + _synthesis)
+```
+
+If context.json has no branch info and the directory name isn't a PR number, ask the user:
+```
+User: synthesize the reviews in /tmp/reviews/my-feature
+
+You:
+1. Spawn pre-processor → context.json has no branch info
+2. Directory name "my-feature" is not a PR number
+3. Ask user: "Which PR or branch were these reviews written against?"
+4. User provides: PR #42 or branch name
+5. Resolve branch, create worktree, continue as above
 ```
 
 ## Full Workflow
