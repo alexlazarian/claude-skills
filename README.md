@@ -42,8 +42,9 @@ ln -s /path/to/claude-skills/code-review ~/.claude/skills/code-review
 ln -s /path/to/claude-skills/review-synthesis ~/.claude/skills/review-synthesis
 ```
 
-## Dependencies
+## Credits
 
+- [vhpoet/.agents](https://github.com/vhpoet/.agents) — the code-review skill is based on Vahe Hovhannisyan's code-review skill
 - [superpowers](https://github.com/obra/superpowers) — foundational skill framework. Several skills here reference superpowers skills like `receiving-code-review` and `dispatching-parallel-agents`.
 
 ## Adding a new skill
