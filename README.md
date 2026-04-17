@@ -12,6 +12,14 @@ Entropy-reducing code review. Runs 9 independent review layers as isolated subag
 
 Blind validation pipeline for multiple code review outputs. Takes N review files, strips reviewer identity, verifies every finding against actual code, filters hallucinations, and produces a single prioritized report with signal-to-noise stats. Three-stage pipeline: pre-processor → blind synthesizer → reporter.
 
+### improve-prompt
+
+Transforms rough user prompts into clear, behavior-focused ones. Reads codebase context to understand the problem, keeps output high-level (no file names or implementation details), and copies to clipboard. Two modes: `--what` (descriptive, default) and `--how` (soft hypothesis about the problem area).
+
+### writing-for-interfaces
+
+Voice-first framework for writing, reviewing, and rewriting interface copy — buttons, errors, empty states, onboarding, CLI output, notifications. Establishes voice before applying principles (Purpose, Anticipation, Context, Empathy), then craft rules. Encodes a precedence chain: clarity > voice > craft rules. Patterns reference covers alerts, destructive actions, accessibility labels, and more.
+
 ## Usage: review-synthesis
 
 The synthesis skill expects review outputs as `.md` files in a shared directory. After any review agent finishes (code-review, PR review, etc.), save its output with this prompt:
@@ -45,6 +53,7 @@ ln -s /path/to/claude-skills/review-synthesis ~/.claude/skills/review-synthesis
 ## Credits
 
 - [vhpoet/.agents](https://github.com/vhpoet/.agents) — the code-review skill is based on Vahe Hovhannisyan's code-review skill
+- [andrewgleave/skills](https://github.com/andrewgleave/skills) — writing-for-interfaces is a fork of Andrew Gleave's skill of the same name
 - [superpowers](https://github.com/obra/superpowers) — foundational skill framework. Several skills here reference superpowers skills like `receiving-code-review` and `dispatching-parallel-agents`.
 
 ## Adding a new skill
